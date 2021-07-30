@@ -1,3 +1,5 @@
+RUN /opt/selenium/generate_config > /opt/selenium/config.json
+
 USER 1200
 
 #========================
