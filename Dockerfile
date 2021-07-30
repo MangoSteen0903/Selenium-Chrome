@@ -1,181 +1,87 @@
-FROM selenium/base:4.0.0-rc-1-prerelease-20210713
-LABEL authors=SeleniumHQ
+FROM ubuntu:focal-20210416
+LABEL authors="Selenium <selenium-developers@googlegroups.com>"
 
-USER root
+#================================================
+# Customize sources for apt-get
+#================================================
+RUN  echo "deb http://archive.ubuntu.com/ubuntu focal main universe\n" > /etc/apt/sources.list \
+  && echo "deb http://archive.ubuntu.com/ubuntu focal-updates main universe\n" >> /etc/apt/sources.list \
+  && echo "deb http://security.ubuntu.com/ubuntu focal-security main universe\n" >> /etc/apt/sources.list
 
-#==============
-# Xvfb
-#==============
-RUN apt-get update -qqy \
-  && apt-get -qqy install \
-    xvfb \
-    pulseaudio \
-  && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
+# No interactive frontend during docker build
+ENV DEBIAN_FRONTEND=noninteractive \
+    DEBCONF_NONINTERACTIVE_SEEN=true
 
-#==============================
-# Locale and encoding settings
-#==============================
-ENV LANG_WHICH en
-ENV LANG_WHERE US
-ENV ENCODING UTF-8
-ENV LANGUAGE ${LANG_WHICH}_${LANG_WHERE}.${ENCODING}
-ENV LANG ${LANGUAGE}
-# Layer size: small: ~9 MB
-# Layer size: small: ~9 MB MB (with --no-install-recommends)
+#========================
+# Miscellaneous packages
+# Includes minimal runtime used for executing non GUI Java programs
+#========================
 RUN apt-get -qqy update \
   && apt-get -qqy --no-install-recommends install \
-    language-pack-en \
+    bzip2 \
+    ca-certificates \
+    openjdk-11-jre-headless \
     tzdata \
-    locales \
-  && locale-gen ${LANGUAGE} \
-  && dpkg-reconfigure --frontend noninteractive locales \
-  && apt-get -qyy autoremove \
-  && rm -rf /var/lib/apt/lists/* \
-  && apt-get -qyy clean
+    sudo \
+    unzip \
+    wget \
+    jq \
+    curl \
+    supervisor \
+    gnupg2 \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/* \
+  && sed -i 's/securerandom\.source=file:\/dev\/random/securerandom\.source=file:\/dev\/urandom/' ./usr/lib/jvm/java-11-openjdk-amd64/conf/security/java.security
 
-#=====
-# VNC
-#=====
-RUN apt-get update -qqy \
-  && apt-get -qqy install \
-  x11vnc \
-  && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
+#===================
+# Timezone settings
+# Possible alternative: https://github.com/docker/docker/issues/3359#issuecomment-32150214
+#===================
+ENV TZ "UTC"
+RUN echo "${TZ}" > /etc/timezone \
+  && dpkg-reconfigure --frontend noninteractive tzdata
 
-#=========
-# fluxbox
-# A fast, lightweight and responsive window manager
-#=========
-RUN apt-get update -qqy \
-  && apt-get -qqy install \
-    fluxbox \
-  && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
+#========================================
+# Add normal user and group with passwordless sudo
+#========================================
+RUN groupadd seluser \
+         --gid 1201 \
+  && useradd seluser \
+         --create-home \
+         --gid 1201 \
+         --shell /bin/bash \
+         --uid 1200 \
+  && usermod -a -G sudo seluser \
+  && echo 'ALL ALL = (ALL) NOPASSWD: ALL' >> /etc/sudoers \
+  && echo 'seluser:secret' | chpasswd
+ENV HOME=/home/seluser
 
-#================
-# Font libraries
-#================
-# libfontconfig            ~1 MB
-# libfreetype6             ~1 MB
-# xfonts-cyrillic          ~2 MB
-# xfonts-scalable          ~2 MB
-# fonts-liberation         ~3 MB
-# fonts-ipafont-gothic     ~13 MB
-# fonts-wqy-zenhei         ~17 MB
-# fonts-tlwg-loma-otf      ~300 KB
-# ttf-ubuntu-font-family   ~5 MB
-#   Ubuntu Font Family, sans-serif typeface hinted for clarity
-# Removed packages:
-# xfonts-100dpi            ~6 MB
-# xfonts-75dpi             ~6 MB
-# Regarding fonts-liberation see:
-#  https://github.com/SeleniumHQ/docker-selenium/issues/383#issuecomment-278367069
-# Layer size: small: 36.28 MB (with --no-install-recommends)
-# Layer size: small: 36.28 MB
-RUN apt-get -qqy update \
-  && apt-get -qqy --no-install-recommends install \
-    libfontconfig \
-    libfreetype6 \
-    xfonts-cyrillic \
-    xfonts-scalable \
-    fonts-liberation \
-    fonts-ipafont-gothic \
-    fonts-wqy-zenhei \
-    fonts-tlwg-loma-otf \
-    ttf-ubuntu-font-family \
-  && rm -rf /var/lib/apt/lists/* \
-  && apt-get -qyy clean
+#======================================
+# Add Grid check script
+#======================================
+COPY check-grid.sh entry_point.sh /opt/bin/
 
-########################################
-# noVNC exposes VNC through a web page #
-########################################
-# Download https://github.com/novnc/noVNC dated 2021-03-30 commit 84f102d6a9ffaf3972693d59bad5c6fddb6d7fb0
-# Download https://github.com/novnc/websockify dated 2021-03-22 commit c5d365dd1dbfee89881f1c1c02a2ac64838d645f
-ENV NOVNC_SHA="84f102d6a9ffaf3972693d59bad5c6fddb6d7fb0" \
-    WEBSOCKIFY_SHA="c5d365dd1dbfee89881f1c1c02a2ac64838d645f"
-RUN  wget -nv -O noVNC.zip \
-       "https://github.com/novnc/noVNC/archive/${NOVNC_SHA}.zip" \
-  && unzip -x noVNC.zip \
-  && mv noVNC-${NOVNC_SHA} /opt/bin/noVNC \
-  && cp /opt/bin/noVNC/vnc.html /opt/bin/noVNC/index.html \
-  && rm noVNC.zip \
-  && wget -nv -O websockify.zip \
-      "https://github.com/novnc/websockify/archive/${WEBSOCKIFY_SHA}.zip" \
-  && unzip -x websockify.zip \
-  && rm websockify.zip \
-  && mv websockify-${WEBSOCKIFY_SHA} /opt/bin/noVNC/utils/websockify
+#======================================
+# Add Supervisor configuration file
+#======================================
+COPY supervisord.conf /etc
+
+#==========
+# Selenium & relaxing permissions for OpenShift and other non-sudo environments
+#==========
+RUN  mkdir -p /opt/selenium /opt/selenium/assets /var/run/supervisor /var/log/supervisor \
+  && touch /opt/selenium/config.toml \
+  && chmod -R 777 /opt/selenium /opt/selenium/assets /var/run/supervisor /var/log/supervisor /etc/passwd \
+  && wget --no-verbose https://github.com/SeleniumHQ/docker-selenium/releases/download/4.0.0-rc-1-prerelease-20210713/selenium-server-4.0.0-prerelease-rc-1-74745cf081.jar \
+    -O /opt/selenium/selenium-server.jar \
+  # && wget --no-verbose https://selenium-release.storage.googleapis.com/4.0-beta-4/selenium-server-4.0.0-beta-4.jar \
+  #   -O /opt/selenium/selenium-server.jar \
+  && chgrp -R 0 /opt/selenium ${HOME} /opt/selenium/assets /var/run/supervisor /var/log/supervisor \
+  && chmod -R g=u /opt/selenium ${HOME} /opt/selenium/assets /var/run/supervisor /var/log/supervisor
 
 #===================================================
 # Run the following commands as non-privileged user
 #===================================================
+USER 1200:1201
 
-USER 1200
 
-#==============================
-# Scripts to run Selenium Node and XVFB
-#==============================
-COPY start-selenium-node.sh \
-      start-xvfb.sh \
-      /opt/bin/
-
-#==============================
-# Supervisor configuration file
-#==============================
-COPY selenium.conf /etc/supervisor/conf.d/
-
-#==============================
-# Generating the VNC password as seluser
-# So the service can be started with seluser
-#==============================
-
-RUN mkdir -p ${HOME}/.vnc \
-  && x11vnc -storepasswd secret ${HOME}/.vnc/passwd
-
-#==========
-# Relaxing permissions for OpenShift and other non-sudo environments
-#==========
-RUN sudo chmod -R 777 ${HOME} \
-  && sudo chgrp -R 0 ${HOME} \
-  && sudo chmod -R g=u ${HOME}
-
-#==============================
-# Scripts to run fluxbox, x11vnc and noVNC
-#==============================
-COPY start-vnc.sh \
-      start-novnc.sh \
-      /opt/bin/
-
-#==============================
-# Selenium Grid logo as wallpaper for Fluxbox
-#==============================
-COPY selenium_grid_logo.png /usr/share/images/fluxbox/ubuntu-light.png
-
-#============================
-# Some configuration options
-#============================
-ENV SCREEN_WIDTH 1360
-ENV SCREEN_HEIGHT 1020
-ENV SCREEN_DEPTH 24
-ENV SCREEN_DPI 96
-ENV DISPLAY :99.0
-ENV DISPLAY_NUM 99
-ENV START_XVFB true
-
-#========================
-# Selenium Configuration
-#========================
-# As integer, maps to "max-concurrent-sessions"
-ENV SE_NODE_MAX_SESSIONS 1
-# As integer, maps to "session-timeout" in seconds
-ENV SE_NODE_SESSION_TIMEOUT 300
-# As boolean, maps to "override-max-sessions"
-ENV SE_NODE_OVERRIDE_MAX_SESSIONS false
-
-# Following line fixes https://github.com/SeleniumHQ/docker-selenium/issues/87
-ENV DBUS_SESSION_BUS_ADDRESS=/dev/null
-
-# Creating base directory for Xvfb
-RUN  sudo mkdir -p /tmp/.X11-unix && sudo chmod 1777 /tmp/.X11-unix
-
-# Copying configuration script generator
-COPY generate_config /opt/bin/generate_config
-
-EXPOSE 5900
+CMD ["/opt/bin/entry_point.sh"]
