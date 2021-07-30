@@ -1,19 +1,14 @@
 #!/usr/bin/env bash
-FOLDER=../$1
-BASE=$2
-VERSION=$3
-NAMESPACE=$4
-AUTHORS=$5
 
-echo "# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" > ${FOLDER}/Dockerfile
-echo "# NOTE: DO *NOT* EDIT THIS FILE.  IT IS GENERATED." >> ${FOLDER}/Dockerfile
-echo "# PLEASE UPDATE Dockerfile.txt INSTEAD OF THIS FILE" >> ${FOLDER}/Dockerfile
-echo "# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" >> ${FOLDER}/Dockerfile
-echo FROM ${NAMESPACE}/${BASE}:${VERSION} >> ${FOLDER}/Dockerfile
-echo LABEL authors="$AUTHORS" >> ${FOLDER}/Dockerfile
-echo "" >> ${FOLDER}/Dockerfile
-cat ./Dockerfile.txt >> ${FOLDER}/Dockerfile
+VERSION=$1
+NAMESPACE=$2
+AUTHORS=$3
 
-cp ./start-selenium-standalone.sh ${FOLDER}
-cp ./selenium.conf ${FOLDER}
-cp ./generate_config ${FOLDER}
+echo "# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" > ./Dockerfile
+echo "# NOTE: DO *NOT* EDIT THIS FILE.  IT IS GENERATED." >> ./Dockerfile
+echo "# PLEASE UPDATE Dockerfile.txt INSTEAD OF THIS FILE" >> ./Dockerfile
+echo "# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" >> ./Dockerfile
+echo FROM ${NAMESPACE}/base:${VERSION} >> ./Dockerfile
+echo LABEL authors="$AUTHORS" >> ./Dockerfile
+echo "" >> ./Dockerfile
+cat ./Dockerfile.txt >> ./Dockerfile
