@@ -1,14 +1,4 @@
-  FROM selenium/node-chrome:3.6.0
+FROM selenium/node-chrome:3.6.0
 
-ENV HOME=/home/seluser
 
-USER root
-
-COPY ./contrib /usr/local/bin
-
-RUN chown -R 1001:0 /opt/selenium && \
-  /usr/local/bin/fix-permissions /opt/selenium && \
-  /usr/local/bin/fix-permissions $HOME
-
-USER 1001
-WORKDIR $HOME
+RUN -d -p 4444:4444 -p 7900:7900 --shm-size="2g" selenium/standalone-chrome:4.0.0-rc-1-prerelease-20210713
