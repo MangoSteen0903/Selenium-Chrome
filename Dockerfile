@@ -1,61 +1,181 @@
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-# NOTE: DO *NOT* EDIT THIS FILE.  IT IS GENERATED.
-# PLEASE UPDATE Dockerfile.txt INSTEAD OF THIS FILE
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-FROM selenium/node-base:4.0.0-rc-1-prerelease-20210713
+FROM selenium/base:4.0.0-rc-1-prerelease-20210713
 LABEL authors=SeleniumHQ
 
 USER root
 
-#============================================
-# Google Chrome
-#============================================
-# can specify versions by CHROME_VERSION;
-#  e.g. google-chrome-stable=53.0.2785.101-1
-#       google-chrome-beta=53.0.2785.92-1
-#       google-chrome-unstable=54.0.2840.14-1
-#       latest (equivalent to google-chrome-stable)
-#       google-chrome-beta  (pull latest beta)
-#============================================
-ARG CHROME_VERSION="google-chrome-stable"
-RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-  && echo "deb http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list \
-  && apt-get update -qqy \
+#==============
+# Xvfb
+#==============
+RUN apt-get update -qqy \
   && apt-get -qqy install \
-    ${CHROME_VERSION:-google-chrome-stable} \
-  && rm /etc/apt/sources.list.d/google-chrome.list \
+    xvfb \
+    pulseaudio \
   && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
-#=================================
-# Chrome Launch Script Wrapper
-#=================================
-COPY wrap_chrome_binary /opt/bin/wrap_chrome_binary
-RUN /opt/bin/wrap_chrome_binary
+#==============================
+# Locale and encoding settings
+#==============================
+ENV LANG_WHICH en
+ENV LANG_WHERE US
+ENV ENCODING UTF-8
+ENV LANGUAGE ${LANG_WHICH}_${LANG_WHERE}.${ENCODING}
+ENV LANG ${LANGUAGE}
+# Layer size: small: ~9 MB
+# Layer size: small: ~9 MB MB (with --no-install-recommends)
+RUN apt-get -qqy update \
+  && apt-get -qqy --no-install-recommends install \
+    language-pack-en \
+    tzdata \
+    locales \
+  && locale-gen ${LANGUAGE} \
+  && dpkg-reconfigure --frontend noninteractive locales \
+  && apt-get -qyy autoremove \
+  && rm -rf /var/lib/apt/lists/* \
+  && apt-get -qyy clean
+
+#=====
+# VNC
+#=====
+RUN apt-get update -qqy \
+  && apt-get -qqy install \
+  x11vnc \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
+
+#=========
+# fluxbox
+# A fast, lightweight and responsive window manager
+#=========
+RUN apt-get update -qqy \
+  && apt-get -qqy install \
+    fluxbox \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
+
+#================
+# Font libraries
+#================
+# libfontconfig            ~1 MB
+# libfreetype6             ~1 MB
+# xfonts-cyrillic          ~2 MB
+# xfonts-scalable          ~2 MB
+# fonts-liberation         ~3 MB
+# fonts-ipafont-gothic     ~13 MB
+# fonts-wqy-zenhei         ~17 MB
+# fonts-tlwg-loma-otf      ~300 KB
+# ttf-ubuntu-font-family   ~5 MB
+#   Ubuntu Font Family, sans-serif typeface hinted for clarity
+# Removed packages:
+# xfonts-100dpi            ~6 MB
+# xfonts-75dpi             ~6 MB
+# Regarding fonts-liberation see:
+#  https://github.com/SeleniumHQ/docker-selenium/issues/383#issuecomment-278367069
+# Layer size: small: 36.28 MB (with --no-install-recommends)
+# Layer size: small: 36.28 MB
+RUN apt-get -qqy update \
+  && apt-get -qqy --no-install-recommends install \
+    libfontconfig \
+    libfreetype6 \
+    xfonts-cyrillic \
+    xfonts-scalable \
+    fonts-liberation \
+    fonts-ipafont-gothic \
+    fonts-wqy-zenhei \
+    fonts-tlwg-loma-otf \
+    ttf-ubuntu-font-family \
+  && rm -rf /var/lib/apt/lists/* \
+  && apt-get -qyy clean
+
+########################################
+# noVNC exposes VNC through a web page #
+########################################
+# Download https://github.com/novnc/noVNC dated 2021-03-30 commit 84f102d6a9ffaf3972693d59bad5c6fddb6d7fb0
+# Download https://github.com/novnc/websockify dated 2021-03-22 commit c5d365dd1dbfee89881f1c1c02a2ac64838d645f
+ENV NOVNC_SHA="84f102d6a9ffaf3972693d59bad5c6fddb6d7fb0" \
+    WEBSOCKIFY_SHA="c5d365dd1dbfee89881f1c1c02a2ac64838d645f"
+RUN  wget -nv -O noVNC.zip \
+       "https://github.com/novnc/noVNC/archive/${NOVNC_SHA}.zip" \
+  && unzip -x noVNC.zip \
+  && mv noVNC-${NOVNC_SHA} /opt/bin/noVNC \
+  && cp /opt/bin/noVNC/vnc.html /opt/bin/noVNC/index.html \
+  && rm noVNC.zip \
+  && wget -nv -O websockify.zip \
+      "https://github.com/novnc/websockify/archive/${WEBSOCKIFY_SHA}.zip" \
+  && unzip -x websockify.zip \
+  && rm websockify.zip \
+  && mv websockify-${WEBSOCKIFY_SHA} /opt/bin/noVNC/utils/websockify
+
+#===================================================
+# Run the following commands as non-privileged user
+#===================================================
 
 USER 1200
 
-#============================================
-# Chrome webdriver
-#============================================
-# can specify versions by CHROME_DRIVER_VERSION
-# Latest released version will be used by default
-#============================================
-ARG CHROME_DRIVER_VERSION
-RUN if [ -z "$CHROME_DRIVER_VERSION" ]; \
-  then CHROME_MAJOR_VERSION=$(google-chrome --version | sed -E "s/.* ([0-9]+)(\.[0-9]+){3}.*/\1/") \
-    && CHROME_DRIVER_VERSION=$(wget --no-verbose -O - "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${CHROME_MAJOR_VERSION}"); \
-  fi \
-  && echo "Using chromedriver version: "$CHROME_DRIVER_VERSION \
-  && wget --no-verbose -O /tmp/chromedriver_linux64.zip https://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip \
-  && rm -rf /opt/selenium/chromedriver \
-  && unzip /tmp/chromedriver_linux64.zip -d /opt/selenium \
-  && rm /tmp/chromedriver_linux64.zip \
-  && mv /opt/selenium/chromedriver /opt/selenium/chromedriver-$CHROME_DRIVER_VERSION \
-  && chmod 755 /opt/selenium/chromedriver-$CHROME_DRIVER_VERSION \
-  && sudo ln -fs /opt/selenium/chromedriver-$CHROME_DRIVER_VERSION /usr/bin/chromedriver
+#==============================
+# Scripts to run Selenium Node and XVFB
+#==============================
+COPY start-selenium-node.sh \
+      start-xvfb.sh \
+      /opt/bin/
 
+#==============================
+# Supervisor configuration file
+#==============================
+COPY selenium.conf /etc/supervisor/conf.d/
 
-#============================================
-# Dumping Browser name and version for config
-#============================================
-RUN echo "chrome" > /opt/selenium/browser_name
+#==============================
+# Generating the VNC password as seluser
+# So the service can be started with seluser
+#==============================
+
+RUN mkdir -p ${HOME}/.vnc \
+  && x11vnc -storepasswd secret ${HOME}/.vnc/passwd
+
+#==========
+# Relaxing permissions for OpenShift and other non-sudo environments
+#==========
+RUN sudo chmod -R 777 ${HOME} \
+  && sudo chgrp -R 0 ${HOME} \
+  && sudo chmod -R g=u ${HOME}
+
+#==============================
+# Scripts to run fluxbox, x11vnc and noVNC
+#==============================
+COPY start-vnc.sh \
+      start-novnc.sh \
+      /opt/bin/
+
+#==============================
+# Selenium Grid logo as wallpaper for Fluxbox
+#==============================
+COPY selenium_grid_logo.png /usr/share/images/fluxbox/ubuntu-light.png
+
+#============================
+# Some configuration options
+#============================
+ENV SCREEN_WIDTH 1360
+ENV SCREEN_HEIGHT 1020
+ENV SCREEN_DEPTH 24
+ENV SCREEN_DPI 96
+ENV DISPLAY :99.0
+ENV DISPLAY_NUM 99
+ENV START_XVFB true
+
+#========================
+# Selenium Configuration
+#========================
+# As integer, maps to "max-concurrent-sessions"
+ENV SE_NODE_MAX_SESSIONS 1
+# As integer, maps to "session-timeout" in seconds
+ENV SE_NODE_SESSION_TIMEOUT 300
+# As boolean, maps to "override-max-sessions"
+ENV SE_NODE_OVERRIDE_MAX_SESSIONS false
+
+# Following line fixes https://github.com/SeleniumHQ/docker-selenium/issues/87
+ENV DBUS_SESSION_BUS_ADDRESS=/dev/null
+
+# Creating base directory for Xvfb
+RUN  sudo mkdir -p /tmp/.X11-unix && sudo chmod 1777 /tmp/.X11-unix
+
+# Copying configuration script generator
+COPY generate_config /opt/bin/generate_config
+
+EXPOSE 5900
