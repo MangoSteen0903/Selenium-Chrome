@@ -1,23 +1,19 @@
-RUN /opt/selenium/generate_config > /opt/selenium/config.json
-
 USER 1200
 
-#========================
-# Selenium Hub Configuration
-#========================
+#====================================
+# Scripts to run Selenium Standalone
+#====================================
+COPY start-selenium-standalone.sh /opt/bin/start-selenium-standalone.sh
 
-EXPOSE 4442
-EXPOSE 4443
-EXPOSE 4444
+#==============================
+# Supervisor configuration file
+#==============================
+COPY selenium.conf /etc/supervisor/conf.d/
 
-# In seconds, maps to "--session-request-timeout"
-ENV SE_SESSION_REQUEST_TIMEOUT 300
-# In seconds, maps to "--session-retry-interval"
-ENV SE_SESSION_RETRY_INTERVAL 5
+# Copying configuration script generator
+COPY generate_config /opt/bin/generate_config
+
 # Boolean value, maps "--relax-checks"
 ENV SE_RELAX_CHECKS true
 
-COPY start-selenium-grid-hub.sh \
-    /opt/bin/
-
-COPY selenium-grid-hub.conf /etc/supervisor/conf.d/
+EXPOSE 4444
